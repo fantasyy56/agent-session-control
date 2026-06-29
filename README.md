@@ -10,7 +10,7 @@
 
 <img width="900" alt="Agent Session Control Dashboard" src="https://raw.githubusercontent.com/your-username/agent-session-control/main/docs/screenshot.png" />
 
-*Unified real-time observatory for Claude CLI + CodeBuddy IDE sessions, with cross-model debate-style peer review.*
+*Unified real-time observatory for Claude CLI sessions.*
 
 </div>
 
@@ -18,19 +18,30 @@
 
 ## Why This Exists
 
-Modern AI-assisted coding spans multiple surfaces — terminal agents (Claude Code CLI), IDE copilots (CodeBuddy), and everything in between. These tools write to separate, incompatible local stores with no unified view.
+The **Claude CLI agent** writes sessions to local files, but there's no unified way to inspect, review, or manage them. Each session becomes a **black box** — you can't easily compare outputs from different models, audit what was done, or inject feedback back into live sessions.
 
-**Agent Session Control** solves this by reading directly from each tool's local storage, normalizing the message model, and presenting a single live dashboard. When you want a second opinion on what the agent just did, kick off a **cross-model peer review** — two heterogeneous LLMs debate the session transcript and converge to a conclusion, right inside the dashboard.
+**Agent Session Control** is a **real-time session observatory** purpose-built for Claude CLI. It reads directly from Claude's local session store, watches for live changes, and presents a unified dashboard for inspection and peer review. Beyond Claude, the system is extensible: CodeBuddy IDE, Cursor, Windsurf, and other AI tools can be added as additional session sources without touching core logic.
 
 ---
 
-## Highlights
+## Supported Session Sources
+
+| Source | Status | Auto-Discovery |
+|---|---|---|
+| **Claude CLI** | ✅ Active | `~/.claude/projects/` |
+| **CodeBuddy IDE** | ✅ Active | `~/Library/Application Support/CodeBuddyExtension/Data/` |
+| **Cursor** | 🔜 Planned | `~/.cursor/` (estimated) |
+| **Windsurf** | 🔜 Planned | `~/.windsurf/` (estimated) |
+
+---
+
+## Core Features
 
 ### Multi-Source Session Aggregation
 
-- **Zero-config discovery** — automatically finds Claude CLI sessions under `~/.claude/projects/` and CodeBuddy IDE conversations under the macOS Application Support directory. No path configuration needed.
-- **Unified message model** — both sources are normalized to the same `role + blocks` schema (`text`, `thinking`, `tool_use`, `tool_result`, `image`), regardless of the underlying storage format.
-- **Live file-system watching** — [chokidar](https://github.com/paulmillr/chokidar) watches both stores concurrently; incremental message deltas are pushed over WebSocket within milliseconds of the agent writing to disk.
+- **Zero-config discovery** — automatically finds Claude CLI sessions and CodeBuddy IDE conversations. No path configuration needed.
+- **Unified message model** — all sources normalize to the same `role + blocks` schema (`text`, `thinking`, `tool_use`, `tool_result`, `image`), regardless of storage format.
+- **Live file-system watching** — [chokidar](https://github.com/paulmillr/chokidar) monitors all sources concurrently; incremental deltas are pushed over WebSocket within milliseconds.
 
 ### Intelligent Session View
 
@@ -126,8 +137,6 @@ PORT=3002
 - [ ] **Phase 4** — Reverse operation: resume/inject into live Claude CLI sessions
 - [ ] Session naming persistence
 - [ ] Cursor / Windsurf data source adapters
-
----
 
 ## Tech Stack
 
