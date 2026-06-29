@@ -80,7 +80,7 @@ The `AggregateStore` is source-agnostic: adding a third source (Cursor, Windsurf
 
 ```bash
 git clone https://github.com/your-username/agent-session-control.git
-cd agent-session-control/multi-agent-debate
+cd agent-session-control
 
 cp .env.example .env
 # Edit .env: set API_KEY and API_BASE_URL for peer review

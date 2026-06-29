@@ -22,7 +22,7 @@
 ### 开发启动
 
 ```bash
-cd multi-agent-debate
+cd agent-session-control
 npm install
 npm run dev
 ```

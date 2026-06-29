@@ -3,16 +3,19 @@
 .env.local
 .env.*.local
 
-# Dependencies
-node_modules/
-
 # Build output
 dist/
 build/
+
+# Dependencies
+node_modules/
+
+# TypeScript incremental build
 *.tsbuildinfo
 
 # Logs
 *.log
+npm-debug.log*
 
 # OS
 .DS_Store
@@ -21,3 +24,8 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# Local session data (never commit real AI session files)
+*.jsonl

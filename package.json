@@ -1,7 +1,7 @@
 {
-  "name": "multi-agent-debate",
+  "name": "agent-session-control",
   "version": "1.0.0",
-  "description": "Multi-agent debate collaboration tool",
+  "description": "A real-time, multi-source AI coding session observatory with cross-model peer review",
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node src/server.ts",
