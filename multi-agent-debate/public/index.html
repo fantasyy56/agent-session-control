@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Claude 会话监视台</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --border: #2a2f3a;
+    --text: #e6e8ec;
+    --muted: #8b94a3;
+    --accent: #c97b4a;
+    --accent-2: #4a8fc9;
+    --user: #2563565e;
+    --assistant: #1e222b;
+    --tool: #232838;
+    --green: #3fb950;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  }
+  /* 顶栏 */
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .5px; }
+  header .spacer { flex: 1; }
+  .badge {
+    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+  }
+  .badge.live { color: var(--green); border-color: #2d5a35; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); margin-right: 5px; vertical-align: middle; }
+  .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.off { background: #d9534f; }
+  button {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 6px 12px; border-radius: 7px; cursor: pointer; font-size: 13px;
+  }
+  button:hover { border-color: var(--accent); }
+  .toggle.active { background: #1d3b22; border-color: #2d5a35; color: var(--green); }
+
+  /* 主体两列 */
+  .main { flex: 1; display: flex; min-height: 0; }
+  .sidebar {
+    width: 320px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0;
+  }
+  .sidebar .search { padding: 10px; border-bottom: 1px solid var(--border); }
+  .sidebar .search input {
+    width: 100%; padding: 7px 10px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 7px; color: var(--text); font-size: 13px;
+  }
+  .session-list { overflow-y: auto; flex: 1; padding: 6px; }
+  .project-group { margin-bottom: 6px; }
+  .project-header {
+    display: flex; align-items: center; gap: 6px; padding: 7px 8px; cursor: pointer;
+    color: var(--muted); font-size: 12px; border-radius: 6px; user-select: none;
+  }
+  .project-header:hover { background: var(--panel-2); }
+  .project-header .caret { transition: transform .15s; font-size: 10px; }
+  .project-header.collapsed .caret { transform: rotate(-90deg); }
+  .project-header .path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent-2); }
+  .project-header .count { background: var(--bg); padding: 1px 7px; border-radius: 999px; }
+  .session-item {
+    padding: 8px 10px; margin: 2px 0 2px 10px; border-radius: 7px; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .session-item:hover { background: var(--panel-2); }
+  .session-item.active { background: var(--panel-2); border-color: var(--accent); }
+  .session-item .title { font-size: 13px; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-item .meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; }
+
+  /* 时间线 */
+  .timeline-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .session-bar {
+    padding: 12px 18px; border-bottom: 1px solid var(--border); background: var(--panel);
+    flex-shrink: 0;
+  }
+  .session-bar .t { font-size: 15px; font-weight: 600; }
+  .session-bar .sub { font-size: 12px; color: var(--muted); margin-top: 4px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .session-bar .sub code { color: var(--accent-2); }
+  .timeline { flex: 1; overflow-y: auto; padding: 18px; }
+  .empty { color: var(--muted); text-align: center; margin-top: 80px; line-height: 1.8; }
+
+  .msg { margin-bottom: 14px; max-width: 88%; }
+  .msg.user { margin-left: auto; }
+  .msg.assistant { margin-right: auto; }
+  .msg .who { font-size: 11px; color: var(--muted); margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }
+  .msg .who .role-tag { padding: 1px 7px; border-radius: 999px; font-weight: 600; }
+  .msg.user .who .role-tag { background: #234a3f; color: #7fd9b9; }
+  .msg.assistant .who .role-tag { background: #3a2c1f; color: var(--accent); }
+  .msg .model { color: var(--muted); }
+  .msg .tokens { color: #6b7280; }
+  .bubble { background: var(--assistant); border: 1px solid var(--border); border-radius: 10px; padding: 10px 13px; }
+  .msg.user .bubble { background: var(--user); border-color: #2d5a4a; }
+  .block { white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
+  .block + .block { margin-top: 8px; }
+  .block.thinking { color: var(--muted); font-style: italic; border-left: 2px solid var(--border); padding-left: 10px; }
+
+  details.tool { background: var(--tool); border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; }
+  details.tool > summary {
+    cursor: pointer; padding: 7px 11px; font-size: 12px; color: var(--accent-2);
+    list-style: none; display: flex; gap: 8px; align-items: center;
+  }
+  details.tool > summary::-webkit-details-marker { display: none; }
+  details.tool > summary .tn { font-weight: 600; }
+  details.tool[data-kind="result"] > summary { color: #8b94a3; }
+  details.tool[data-kind="result"].err > summary { color: #d9534f; }
+  details.tool pre {
+    margin: 0; padding: 10px 12px; border-top: 1px solid var(--border);
+    overflow-x: auto; font-size: 12px; line-height: 1.5;
+    font-family: "SF Mono", Menlo, Consolas, monospace; color: #cdd3dc; white-space: pre-wrap; word-break: break-word;
+    max-height: 400px;
+  }
+  details.tool[open] pre { max-height: none; }
+
+  /* 简洁模式：工具调用紧凑徽标条 */
+  .tool-strip {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+    padding: 6px 10px; background: var(--tool); border: 1px solid var(--border); border-radius: 8px;
+    cursor: pointer; align-items: center; font-size: 12px; color: var(--muted);
+  }
+  .tool-strip:hover { border-color: var(--accent-2); }
+  .tool-strip .tchip {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
+    background: var(--panel); border-radius: 999px; color: var(--accent-2); font-size: 11px;
+  }
+  .tool-strip .tchip.err { color: #d9534f; background: #3a2020; }
+  .tool-strip .tcount { color: #6b7280; font-size: 11px; }
+  .tool-strip .hint { color: #5a6270; font-size: 11px; margin-left: auto; }
+  /* 展开后的工具明细容器 */
+  .tool-strip-detail { margin-top: 6px; display: none; }
+  .tool-strip-detail.open { display: block; }
+
+  /* 会话头：简洁/完整切换按钮（紧贴标题右侧） */
+  .session-bar .t { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .view-toggle {
+    font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+    cursor: pointer;
+  }
+  .view-toggle.concise { background: #1d3b22; border-color: #2d5a35; color: var(--green); }
+  .view-toggle.full { background: #2c2438; border-color: #4a3a5a; color: #c8a8e0; }
+  .view-toggle:hover { filter: brightness(1.15); }
+
+  /* 用户消息中的注入标签块 */
+  .block.user-prompt {
+    white-space: pre-wrap; word-break: break-word; line-height: 1.6;
+    color: var(--text); font-size: 14px;
+  }
+  details.inject-block {
+    margin-top: 8px; border-radius: 8px; border: 1px solid var(--border);
+    background: rgba(255,255,255,0.02); overflow: hidden;
+  }
+  details.inject-block > summary {
+    cursor: pointer; list-style: none; padding: 6px 11px; font-size: 12px;
+    display: flex; gap: 8px; align-items: center; color: var(--muted);
+  }
+  details.inject-block > summary::-webkit-details-marker { display: none; }
+  details.inject-block > summary::before {
+    content: '▸'; font-size: 10px; transition: transform .15s; color: #5a6270;
+  }
+  details.inject-block[open] > summary::before { transform: rotate(90deg); }
+  details.inject-block .inject-tag {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px;
+    padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,0.25);
+  }
+  details.inject-block .inject-cat { font-size: 11px; }
+  details.inject-block .inject-meta { color: #5a6270; font-size: 11px; margin-left: auto; }
+  details.inject-block .inject-content {
+    margin: 0; padding: 8px 12px; border-top: 1px solid var(--border);
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px;
+    color: #c0c5cf; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+    max-height: 360px; overflow: auto;
+  }
+  details.inject-block[open] .inject-content { max-height: 600px; }
+
+  /* 不同语义的标签：左边竖条颜色 */
+  details.inject-block.cat-rule    { border-left: 3px solid #c97b4a; }
+  details.inject-block.cat-rule    .inject-tag { color: #f0b88a; }
+  details.inject-block.cat-context { border-left: 3px solid #4a8fc9; }
+  details.inject-block.cat-context .inject-tag { color: #8ab8e0; }
+  details.inject-block.cat-command { border-left: 3px solid #6b7280; }
+  details.inject-block.cat-command .inject-tag { color: #a0a6b0; }
+  details.inject-block.cat-memory  { border-left: 3px solid #8a6ab0; }
+  details.inject-block.cat-memory  .inject-tag { color: #c8a8e0; }
+  details.inject-block.cat-misc    { border-left: 3px solid var(--border); }
+
+  /* 简洁模式下的 thinking：默认折叠 */
+  details.thinking-block {
+    background: transparent; border-left: 2px solid var(--border); padding-left: 10px;
+    margin-top: 6px; color: var(--muted); font-style: italic;
+  }
+  details.thinking-block > summary {
+    cursor: pointer; list-style: none; font-size: 12px; color: #6b7280;
+  }
+  details.thinking-block > summary::-webkit-details-marker { display: none; }
+  details.thinking-block .tcontent {
+    white-space: pre-wrap; word-break: break-word; line-height: 1.55; margin-top: 6px; font-size: 13px;
+  }
+
+  /* 简洁模式：空 assistant 气泡（只有工具）压缩 */
+  .msg.tools-only .bubble { padding: 4px 8px; background: transparent; border: none; }
+
+  .round-sep { text-align: center; color: var(--muted); font-size: 11px; margin: 18px 0; }
+  .new-flash { animation: flash 1s ease; }
+  @keyframes flash { from { background: #2a3a2c; } to { background: transparent; } }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: #2f3540; border-radius: 6px; }
+
+  /* 手动命名标记 */
+  .custom-title-badge { margin-right: 4px; font-size: 11px; opacity: 0.8; }
+
+  /* 数据源 Tab 切换器（header 中） */
+  .source-tabs { display: inline-flex; gap: 4px; background: var(--panel-2); padding: 3px; border-radius: 9px; border: 1px solid var(--border); margin-left: 8px; }
+  .source-tabs .tab {
+    padding: 4px 11px; font-size: 12px; color: var(--muted); cursor: pointer; border-radius: 6px;
+    user-select: none; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .source-tabs .tab:hover { color: var(--text); }
+  .source-tabs .tab.active { background: var(--bg); color: var(--text); }
+  .source-tabs .tab.disabled { opacity: 0.35; cursor: not-allowed; }
+  .source-tabs .tab .cnt { font-size: 10px; color: var(--muted); }
+  .source-tabs .tab.active .cnt { color: var(--accent); }
+
+  /* 数据源徽标（session-item 上） */
+  .src-chip {
+    display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px;
+    margin-right: 6px; vertical-align: 1px; opacity: 0.9;
+  }
+  .src-chip.claude { background: #2c1f30; color: #d8a8e0; }
+  .src-chip.codebuddy { background: #1f2c30; color: #a8d0e0; }
+
+  /* 发起评审按钮 */
+  .review-trigger {
+    margin-top: 10px; background: #2b2233; border: 1px solid #4a3a5a; color: #c8a8e0;
+    padding: 6px 12px; border-radius: 7px; cursor: pointer; font-size: 13px;
+  }
+  .review-trigger:hover { border-color: #8a6ab0; }
+
+  /* 评审讨论面板（右侧第三列） */
+  .review-panel {
+    width: 420px; flex-shrink: 0; background: var(--panel); border-left: 1px solid var(--border);
+    display: none; flex-direction: column; min-height: 0;
+  }
+  .review-panel.open { display: flex; }
+  .review-head {
+    padding: 11px 14px; border-bottom: 1px solid var(--border); background: var(--panel-2);
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .review-head .rt { font-weight: 600; font-size: 14px; color: #c8a8e0; flex: 1; }
+  .review-head .x { cursor: pointer; color: var(--muted); padding: 2px 6px; }
+  .review-status {
+    padding: 6px 14px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  }
+  .review-status .st { padding: 1px 8px; border-radius: 999px; background: var(--bg); }
+  .review-status .st.running { color: var(--green); }
+  .review-status .st.finished { color: var(--accent-2); }
+  .review-status .st.error { color: #d9534f; }
+  .review-status .st.stopped, .review-status .st.paused { color: var(--accent); }
+  .review-body { flex: 1; overflow-y: auto; padding: 14px; }
+  .rmsg { margin-bottom: 14px; }
+  .rmsg .rwho { font-size: 11px; margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }
+  .rmsg .rwho .tag { padding: 1px 8px; border-radius: 999px; font-weight: 600; }
+  .rmsg.executor .tag { background: #3a2c1f; color: var(--accent); }
+  .rmsg.reviewer .tag { background: #1f3340; color: var(--accent-2); }
+  .rmsg.conclusion .tag { background: #1d3b22; color: var(--green); }
+  .rmsg.moderator .tag { background: #3a3320; color: #d8c87a; }
+  .rmsg .rbubble {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 13px; white-space: pre-wrap; word-break: break-word; line-height: 1.55;
+  }
+  .rmsg.conclusion .rbubble { border-color: #2d5a35; background: #14241a; }
+  .rmsg .rmodel { color: #6b7280; }
+  .review-ctrl {
+    padding: 10px 14px; border-top: 1px solid var(--border); flex-shrink: 0; display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  .review-ctrl input {
+    flex: 1; min-width: 120px; padding: 6px 10px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 7px; color: var(--text); font-size: 13px;
+  }
+  .review-ctrl button { font-size: 12px; padding: 5px 10px; }
+
+  /* 弹窗：发起评审输入 query */
+  .modal-mask {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 50;
+    align-items: center; justify-content: center;
+  }
+  .modal-mask.open { display: flex; }
+  .modal {
+    width: 540px; max-width: 92vw; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px;
+  }
+  .modal h3 { margin: 0 0 6px; font-size: 15px; }
+  .modal .hint { color: var(--muted); font-size: 12px; margin-bottom: 12px; line-height: 1.6; }
+  .modal textarea {
+    width: 100%; min-height: 96px; resize: vertical; padding: 10px 12px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; line-height: 1.5;
+  }
+  .modal .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+  .modal .actions .primary { background: #2b2233; border-color: #4a3a5a; color: #c8a8e0; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>🔭 多源会话监视台</h1>
+    <span class="source-tabs" id="sourceTabs"></span>
+    <span class="spacer"></span>
+    <span class="badge" id="sourceBadge" title="">—</span>
+    <span class="badge"><span class="dot off" id="connDot"></span><span id="connText">未连接</span></span>
+    <button class="toggle active" id="liveBtn" title="实时跟随最新消息">⚡ 实时</button>
+    <button id="refreshBtn">↻ 刷新</button>
+  </header>
+
+  <div class="main">
+    <aside class="sidebar">
+      <div class="search"><input id="searchInput" placeholder="搜索会话标题 / 项目路径…" /></div>
+      <div class="session-list" id="sessionList"></div>
+    </aside>
+
+    <section class="timeline-wrap">
+      <div class="session-bar" id="sessionBar">
+        <div class="t">未选择会话</div>
+        <div class="sub">从左侧选择一个会话查看完整对话时间线</div>
+      </div>
+      <div class="timeline" id="timeline">
+        <div class="empty">⬅ 选择左侧的会话开始查看<br/>新消息会在开启「实时」时自动追加</div>
+      </div>
+    </section>
+
+    <!-- 评审讨论面板（右侧第三列） -->
+    <aside class="review-panel" id="reviewPanel">
+      <div class="review-head">
+        <span class="rt">⚖ 双模型评审</span>
+        <span class="x" id="reviewClose" title="关闭">✕</span>
+      </div>
+      <div class="review-status" id="reviewStatus">
+        <span>状态：</span><span class="st" id="reviewStatusText">—</span>
+        <span id="reviewModels" style="color:#5a6270"></span>
+      </div>
+      <div class="review-body" id="reviewBody"></div>
+      <div class="review-ctrl">
+        <input id="injectInput" placeholder="插入一句主持人观点（可选）…" />
+        <button id="injectBtn">介入</button>
+        <button id="pauseBtn">暂停</button>
+        <button id="stopBtn">停止</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 发起评审弹窗 -->
+  <div class="modal-mask" id="reviewModal">
+    <div class="modal">
+      <h3>⚖ 发起双模型评审</h3>
+      <div class="hint">
+        主模型将结合本会话「近 5 轮」上下文与你下面的问题，写一份简报交给异构评审模型讨论；评审模型看不到原始会话。<br/>
+        留空则自动取会话最后一条用户消息作为讨论问题。
+      </div>
+      <textarea id="reviewQuery" placeholder="你当前想讨论 / 评审的问题，例如：我倾向用乐观锁解决并发，但担心重试风暴，这思路对吗？"></textarea>
+      <div class="actions">
+        <button id="reviewCancel">取消</button>
+        <button class="primary" id="reviewConfirm">开始评审</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id)
+  let ws = null
+  let projects = []
+  let activeSessionId = null
+  let liveFollow = true
+  // 每个会话独立的简洁/完整状态（sessionId -> bool），默认 true
+  const sessionConciseMode = {}
+  const isConcise = () => activeSessionId ? (sessionConciseMode[activeSessionId] !== false) : true
+  let collapsed = {} // projectKey -> bool
+  let sources = []          // [{sourceType, baseDir, available, ...}]
+  let activeSource = 'all'  // 'all' | 'claude' | 'codebuddy'
+  const SRC_LABEL = { claude: 'Claude CLI', codebuddy: 'CodeBuddy IDE' }
+
+  // ── WebSocket ───────────────────────────────────────────
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    ws = new WebSocket(`${proto}://${location.host}`)
+    ws.onopen = () => setConn(true)
+    ws.onclose = () => { setConn(false); setTimeout(connect, 1500) }
+    ws.onerror = () => setConn(false)
+    ws.onmessage = (e) => handleEvent(JSON.parse(e.data))
+  }
+  function send(obj) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)) }
+  function setConn(on) {
+    $('connDot').className = 'dot ' + (on ? 'on' : 'off')
+    $('connText').textContent = on ? '已连接' : '重连中…'
+  }
+
+  function handleEvent(ev) {
+    switch (ev.type) {
+      case 'init':
+        projects = ev.projects
+        sources = ev.sources || []
+        renderSourceTabs()
+        updateSourceBadge()
+        renderSessionList()
+        break
+      case 'projects':
+        projects = ev.projects
+        renderSessionList()
+        break
+      case 'session_detail':
+        renderTimeline(ev.session)
+        break
+      case 'session_meta_updated':
+        updateMeta(ev.meta)
+        break
+      case 'session_appended':
+        updateMeta(ev.meta)
+        if (ev.sessionId === activeSessionId) appendMessages(ev.messages)
+        break
+      case 'session_removed':
+        if (ev.sessionId === activeSessionId) { activeSessionId = null }
+        projects.forEach(p => p.sessions = p.sessions.filter(s => s.sessionId !== ev.sessionId))
+        renderSessionList()
+        break
+      case 'error':
+        console.warn('server error:', ev.message)
+        break
+
+      // ── 评审讨论 ──
+      case 'review_started':
+        onReviewStarted(ev.review)
+        break
+      case 'review_token':
+        onReviewToken(ev.role, ev.round, ev.token)
+        break
+      case 'review_message':
+        onReviewMessage(ev.message)
+        break
+      case 'review_status':
+        onReviewStatus(ev.status)
+        break
+      case 'review_conclusion':
+        // 结论已通过 review_message(conclusion) 展示，这里仅做状态收尾
+        break
+      case 'review_error':
+        onReviewError(ev.message)
+        break
+    }
+  }
+
+  // ── 会话列表 ─────────────────────────────────────────────
+  function fmtTime(ts) {
+    if (!ts) return ''
+    const d = new Date(ts), now = new Date()
+    const sameDay = d.toDateString() === now.toDateString()
+    const pad = (n) => String(n).padStart(2, '0')
+    const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+    return sameDay ? hm : `${d.getMonth()+1}/${d.getDate()} ${hm}`
+  }
+
+  function countSessionsBySource() {
+    const cnt = { claude: 0, codebuddy: 0, all: 0 }
+    for (const p of projects) {
+      const n = p.sessions.length
+      cnt[p.sourceType] = (cnt[p.sourceType] || 0) + n
+      cnt.all += n
+    }
+    return cnt
+  }
+
+  function renderSourceTabs() {
+    const cnt = countSessionsBySource()
+    const tabs = $('sourceTabs')
+    tabs.innerHTML = ''
+    // 始终显示「全部」 + 两个数据源（不可用的置灰）
+    const items = [
+      { key: 'all', label: '全部', available: true, count: cnt.all },
+      ...sources.map(s => ({ key: s.sourceType, label: SRC_LABEL[s.sourceType] || s.sourceType, available: s.available, count: cnt[s.sourceType] || 0 })),
+    ]
+    for (const it of items) {
+      const el = document.createElement('span')
+      const cls = ['tab']
+      if (activeSource === it.key) cls.push('active')
+      if (!it.available && it.key !== 'all') cls.push('disabled')
+      el.className = cls.join(' ')
+      el.innerHTML = `${escapeHtml(it.label)} <span class="cnt">${it.count}</span>`
+      if (it.available || it.key === 'all') {
+        el.onclick = () => { activeSource = it.key; renderSourceTabs(); updateSourceBadge(); renderSessionList() }
+      }
+      tabs.appendChild(el)
+    }
+  }
+
+  function updateSourceBadge() {
+    const badge = $('sourceBadge')
+    if (activeSource === 'all') {
+      const lines = sources.filter(s => s.available).map(s => `${SRC_LABEL[s.sourceType] || s.sourceType}: ${s.baseDir}`)
+      badge.textContent = `${sources.filter(s => s.available).length} 个数据源`
+      badge.title = lines.join('\n')
+    } else {
+      const s = sources.find(x => x.sourceType === activeSource)
+      const base = s ? s.baseDir : ''
+      badge.textContent = base ? (base.length > 60 ? '…' + base.slice(-58) : base) : '不可用'
+      badge.title = base
+    }
+  }
+
+  function renderSessionList() {
+    const q = $('searchInput').value.trim().toLowerCase()
+    const list = $('sessionList')
+    list.innerHTML = ''
+    let shown = 0
+    for (const p of projects) {
+      if (activeSource !== 'all' && p.sourceType !== activeSource) continue
+      const sessions = p.sessions.filter(s =>
+        !q || s.title.toLowerCase().includes(q) || p.cwd.toLowerCase().includes(q))
+      if (sessions.length === 0) continue
+      shown += sessions.length
+      const key = `${p.sourceType}::${p.cwd}` // 防止两源同 cwd 时冲突
+      const isCollapsed = !!collapsed[key]
+      const group = document.createElement('div')
+      group.className = 'project-group'
+      const short = p.cwd.split('/').slice(-2).join('/') || p.cwd
+      const srcChip = `<span class="src-chip ${p.sourceType}" title="${SRC_LABEL[p.sourceType] || p.sourceType}">${p.sourceType === 'claude' ? 'CLI' : 'IDE'}</span>`
+      const head = document.createElement('div')
+      head.className = 'project-header' + (isCollapsed ? ' collapsed' : '')
+      head.innerHTML = `<span class="caret">▼</span>${srcChip}<span class="path" title="${escapeHtml(p.cwd)}">${escapeHtml(short)}</span><span class="count">${sessions.length}</span>`
+      head.onclick = () => { collapsed[key] = !collapsed[key]; renderSessionList() }
+      group.appendChild(head)
+      if (!isCollapsed) {
+        for (const s of sessions) {
+          const item = document.createElement('div')
+          item.className = 'session-item' + (s.sessionId === activeSessionId ? ' active' : '')
+          item.dataset.sid = s.sessionId
+          const titleHtml = s.customTitle
+            ? `<span class="custom-title-badge" title="手动命名">🏷</span>${escapeHtml(s.customTitle)}`
+            : escapeHtml(s.title)
+          item.innerHTML = `<div class="title">${titleHtml}</div>
+            <div class="meta"><span>💬 ${s.messageCount}</span><span>🕑 ${fmtTime(s.lastActiveAt)}</span>${s.gitBranch ? `<span>⎇ ${escapeHtml(s.gitBranch)}</span>` : ''}</div>`
+          item.onclick = () => openSession(s.sessionId)
+          group.appendChild(item)
+        }
+      }
+      list.appendChild(group)
+    }
+    if (shown === 0) list.innerHTML = '<div class="empty" style="margin-top:40px">未找到会话</div>'
+  }
+
+  function updateMeta(meta) {
+    let found = false
+    for (const p of projects) {
+      // 用 sourceType + sessionId 双键匹配，避免极端情况下两源 id 撞车
+      if (p.sourceType !== meta.sourceType) continue
+      const idx = p.sessions.findIndex(s => s.sessionId === meta.sessionId)
+      if (idx >= 0) { p.sessions[idx] = meta; found = true; break }
+    }
+    if (!found) {
+      const cwdKey = meta.cwd || meta.projectDir
+      let group = projects.find(p => p.sourceType === meta.sourceType && p.cwd === cwdKey)
+      if (!group) {
+        group = { sourceType: meta.sourceType, projectDir: meta.projectDir, cwd: cwdKey, sessionCount: 0, lastActiveAt: 0, sessions: [] }
+        projects.unshift(group)
+      }
+      group.sessions.unshift(meta)
+    }
+    // 重新排序后渲染
+    projects.forEach(p => p.sessions.sort((a,b) => b.lastActiveAt - a.lastActiveAt))
+    projects.sort((a,b) => Math.max(...b.sessions.map(s=>s.lastActiveAt),0) - Math.max(...a.sessions.map(s=>s.lastActiveAt),0))
+    renderSourceTabs() // 计数可能变了
+    renderSessionList()
+    if (meta.sessionId === activeSessionId) updateSessionBar(meta)
+  }
+
+  // ── 会话详情 / 时间线 ────────────────────────────────────
+  function openSession(sid) {
+    activeSessionId = sid
+    renderSessionList()
+    send({ type: 'open_session', sessionId: sid })
+  }
+
+  function updateSessionBar(meta) {
+    const titleHtml = meta.customTitle
+      ? `<span class="custom-title-badge" title="手动命名">🏷</span>${escapeHtml(meta.customTitle)}`
+      : escapeHtml(meta.title)
+    const srcChip = meta.sourceType
+      ? `<span class="src-chip ${meta.sourceType}" title="${SRC_LABEL[meta.sourceType] || meta.sourceType}">${meta.sourceType === 'claude' ? 'Claude CLI' : 'CodeBuddy IDE'}</span>`
+      : ''
+    const concise = sessionConciseMode[meta.sessionId] !== false
+    $('sessionBar').innerHTML = `<div class="t">${srcChip}${titleHtml}
+        <button class="view-toggle ${concise ? 'concise' : 'full'}" id="conciseBtn" title="切换该会话的简洁/完整视图">${concise ? '💬 简洁' : '🔧 完整'}</button>
+      </div>
+      <div class="sub">
+        <span><code>${escapeHtml(meta.cwd)}</code></span>
+        ${meta.gitBranch ? `<span>⎇ ${escapeHtml(meta.gitBranch)}</span>` : ''}
+        <span>💬 ${meta.messageCount} 条</span>
+        <span>🕑 ${fmtTime(meta.lastActiveAt)}</span>
+        <span style="color:#5a6270">id: ${escapeHtml(meta.sessionId.slice(0,8))}</span>
+      </div>
+      <button class="review-trigger" id="reviewTriggerBtn">⚖ 发起双模型评审</button>`
+    $('reviewTriggerBtn').onclick = openReviewModal
+    $('conciseBtn').onclick = () => {
+      const cur = sessionConciseMode[meta.sessionId] !== false
+      sessionConciseMode[meta.sessionId] = !cur
+      rerenderTimeline()
+    }
+  }
+
+  // 记录当前会话原始消息，切换模式时重渲染用
+  let currentSession = null
+
+  function renderTimeline(session) {
+    currentSession = session
+    updateSessionBar(session)
+    const tl = $('timeline')
+    tl.innerHTML = ''
+    if (!session.messages.length) { tl.innerHTML = '<div class="empty">该会话暂无消息</div>'; return }
+    let hidden = 0
+    for (const m of session.messages) {
+      if (shouldHideMessage(m)) { hidden++; continue }
+      tl.appendChild(renderMessage(m))
+    }
+    if (hidden > 0 && isConcise()) {
+      const tip = document.createElement('div')
+      tip.className = 'round-sep'
+      tip.textContent = `（简洁模式已隐藏 ${hidden} 条纯工具结果 / 系统消息，点右上角「🔧 完整」可切回）`
+      tl.appendChild(tip)
+    }
+    scrollBottom()
+  }
+
+  function appendMessages(messages) {
+    const tl = $('timeline')
+    if (tl.querySelector('.empty')) tl.innerHTML = ''
+    // 追加到 currentSession 缓存，便于切换模式时完整重渲染
+    if (currentSession) currentSession.messages.push(...messages)
+    for (const m of messages) {
+      if (shouldHideMessage(m)) continue
+      const el = renderMessage(m)
+      el.classList.add('new-flash')
+      tl.appendChild(el)
+    }
+    if (liveFollow) scrollBottom()
+  }
+
+  function rerenderTimeline() {
+    if (currentSession) renderTimeline(currentSession)
+  }
+
+  // 判断消息在简洁模式下是否应隐藏
+  function shouldHideMessage(m) {
+    if (!isConcise()) return false
+    if (m.role === 'system') return true
+    // user 消息：如果只包含 tool_result（没有真实文本输入），则隐藏
+    if (m.role === 'user') {
+      const hasText = m.blocks.some(b => b.type === 'text' && (b.text || '').trim())
+      const onlyToolResults = m.blocks.every(b => b.type === 'tool_result')
+      if (!hasText && onlyToolResults && m.blocks.length > 0) return true
+    }
+    return false
+  }
+
+  function renderMessage(m) {
+    const wrap = document.createElement('div')
+    const roleClass = m.role === 'assistant' ? 'assistant' : 'user'
+    wrap.className = 'msg ' + roleClass
+    const roleLabel = m.role === 'assistant' ? 'Claude' : (m.role === 'system' ? '系统' : '用户')
+    const tokens = m.usage ? `<span class="tokens">↑${m.usage.input} ↓${m.usage.output}</span>` : ''
+    const model = m.model ? `<span class="model">${escapeHtml(m.model)}</span>` : ''
+    wrap.innerHTML = `<div class="who"><span class="role-tag">${roleLabel}</span>${model}${tokens}<span style="color:#5a6270">${fmtTime(m.timestamp)}</span></div>`
+    const bubble = document.createElement('div')
+    bubble.className = 'bubble'
+
+    const concise = isConcise()
+    // 简洁模式：先过滤空 text，再将连续的 tool_use / tool_result 合并成一个 strip
+    const blocks = concise
+      ? m.blocks.filter(b => !(b.type === 'text' && !(b.text || '').trim()))
+      : m.blocks
+
+    let hasNonToolBlock = false
+    let toolBuffer = []
+    const flushTools = () => {
+      if (toolBuffer.length === 0) return
+      if (concise) {
+        bubble.appendChild(renderToolStrip(toolBuffer))
+      } else {
+        for (const b of toolBuffer) bubble.appendChild(renderBlock(b))
+      }
+      toolBuffer = []
+    }
+
+    for (const b of blocks) {
+      if (b.type === 'tool_use' || b.type === 'tool_result') {
+        toolBuffer.push(b)
+      } else {
+        flushTools()
+        bubble.appendChild(renderBlock(b, m.role))
+        hasNonToolBlock = true
+      }
+    }
+    flushTools()
+
+    // 简洁模式 + 只有工具调用 → 标记为 tools-only（压缩气泡样式）
+    if (concise && !hasNonToolBlock) wrap.classList.add('tools-only')
+
+    wrap.appendChild(bubble)
+    return wrap
+  }
+
+  // 简洁模式：将连续的 tool_use + tool_result 合并成一行紧凑徽标条
+  function renderToolStrip(toolBlocks) {
+    const container = document.createElement('div')
+    // 统计工具名
+    const useCalls = toolBlocks.filter(b => b.type === 'tool_use')
+    const results = toolBlocks.filter(b => b.type === 'tool_result')
+    const errCount = results.filter(b => b.isError).length
+
+    // 把工具名按出现顺序去重展示
+    const seen = new Set()
+    const chips = []
+    for (const u of useCalls) {
+      const name = u.toolName || 'tool'
+      if (seen.has(name)) continue
+      seen.add(name)
+      chips.push(name)
+    }
+    if (chips.length === 0 && results.length > 0) chips.push('tool_result')
+
+    const strip = document.createElement('div')
+    strip.className = 'tool-strip'
+    const chipsHtml = chips.slice(0, 6).map(n =>
+      `<span class="tchip${errCount > 0 && n === chips[0] ? ' err' : ''}">🔧 ${escapeHtml(n)}</span>`
+    ).join('')
+    const more = chips.length > 6 ? `<span class="tcount">+${chips.length - 6}</span>` : ''
+    const summary = `${useCalls.length} 次调用` + (results.length ? ` · ${results.length} 个结果` : '') + (errCount ? ` · ⚠️ ${errCount} 错误` : '')
+    strip.innerHTML = `${chipsHtml}${more}<span class="tcount">${summary}</span><span class="hint">点击展开</span>`
+
+    const detail = document.createElement('div')
+    detail.className = 'tool-strip-detail'
+    for (const b of toolBlocks) detail.appendChild(renderBlock(b))
+
+    strip.onclick = (e) => {
+      // 避免点击内部 details 时触发整体收起
+      if (e.target.closest('details')) return
+      const willOpen = !detail.classList.contains('open')
+      detail.classList.toggle('open', willOpen)
+      strip.querySelector('.hint').textContent = willOpen ? '点击收起' : '点击展开'
+    }
+
+    container.appendChild(strip)
+    container.appendChild(detail)
+    return container
+  }
+
+  // 解析用户文本中的 <tag>...</tag> 注入块，返回 [{kind:'prompt'|'tag', tag?, content}]
+  // 顶层标签（行首到行末的 <tag>...</tag>，可跨行）会被识别为系统注入数据
+  function splitUserText(raw) {
+    if (!raw) return []
+    const segs = []
+    // 匹配顶层成对标签（贪婪 + 允许跨行）。要求标签前面是行首或空白。
+    const re = /(^|\n)\s*<([a-z][a-z0-9_-]*)>([\s\S]*?)<\/\2>\s*(?=\n|$)/gi
+    let lastIdx = 0
+    let m
+    while ((m = re.exec(raw)) !== null) {
+      const start = m.index + m[1].length  // 跳过前导换行
+      if (start > lastIdx) {
+        const text = raw.slice(lastIdx, start).trim()
+        if (text) segs.push({ kind: 'prompt', content: text })
+      }
+      segs.push({ kind: 'tag', tag: m[2], content: m[3].trim() })
+      lastIdx = re.lastIndex
+    }
+    if (lastIdx < raw.length) {
+      const tail = raw.slice(lastIdx).trim()
+      if (tail) segs.push({ kind: 'prompt', content: tail })
+    }
+    // 若全文未匹配出任何标签，整段作为 prompt
+    if (segs.length === 0) segs.push({ kind: 'prompt', content: raw })
+    return segs
+  }
+
+  // 标签语义分类：用于决定徽标颜色 + 默认是否高优显示
+  function tagCategory(tag) {
+    const t = tag.toLowerCase()
+    if (/(reminder|rule|policy|guideline|security)/.test(t)) return 'rule'
+    if (/(context|data|info|additional|attach|environment|workspace|open|recently|viewed|project|file)/.test(t)) return 'context'
+    if (/(command|tool|output|stdout|stderr|caveat)/.test(t)) return 'command'
+    if (/(memor|history|summary|previous)/.test(t)) return 'memory'
+    return 'misc'
+  }
+
+  const TAG_CAT_LABEL = {
+    rule: '📜 规则注入', context: '📎 上下文', command: '⚙ 命令产物', memory: '🧠 记忆/历史', misc: '🏷 注入'
+  }
+
+  function renderUserText(raw) {
+    const concise = isConcise()
+    const segs = splitUserText(raw)
+    const wrap = document.createElement('div')
+    for (const s of segs) {
+      if (s.kind === 'prompt') {
+        const d = document.createElement('div')
+        d.className = 'block user-prompt'
+        d.textContent = s.content
+        wrap.appendChild(d)
+      } else {
+        const cat = tagCategory(s.tag)
+        const det = document.createElement('details')
+        det.className = `inject-block cat-${cat}`
+        if (!concise) det.open = true
+        const lines = s.content.split('\n').length
+        const chars = s.content.length
+        det.innerHTML = `<summary><span class="inject-tag">&lt;${escapeHtml(s.tag)}&gt;</span><span class="inject-cat">${TAG_CAT_LABEL[cat]}</span><span class="inject-meta">${lines}行 · ${chars}字</span></summary>`
+        const pre = document.createElement('pre')
+        pre.className = 'inject-content'
+        pre.textContent = s.content
+        det.appendChild(pre)
+        wrap.appendChild(det)
+      }
+    }
+    return wrap
+  }
+
+  function renderBlock(b, role) {
+    if (b.type === 'text') {
+      // 用户消息：解析注入标签
+      if (role === 'user') return renderUserText(b.text || '')
+      const d = document.createElement('div'); d.className = 'block'; d.textContent = b.text || ''; return d
+    }
+    if (b.type === 'thinking') {
+      // 简洁模式：thinking 默认折叠
+      if (isConcise()) {
+        const det = document.createElement('details'); det.className = 'thinking-block'
+        const preview = (b.text || '').slice(0, 60).replace(/\s+/g, ' ')
+        det.innerHTML = `<summary>💭 思考 · ${escapeHtml(preview)}${(b.text||'').length > 60 ? '…' : ''}</summary>`
+        const c = document.createElement('div'); c.className = 'tcontent'; c.textContent = b.text || ''
+        det.appendChild(c)
+        return det
+      }
+      const d = document.createElement('div'); d.className = 'block thinking'; d.textContent = '💭 ' + (b.text || ''); return d
+    }
+    if (b.type === 'tool_use') {
+      const det = document.createElement('details'); det.className = 'tool'; det.dataset.kind = 'use'
+      const input = typeof b.toolInput === 'string' ? b.toolInput : JSON.stringify(b.toolInput, null, 2)
+      det.innerHTML = `<summary>🔧 <span class="tn">${escapeHtml(b.toolName || 'tool')}</span><span style="color:#6b7280">调用</span></summary><pre>${escapeHtml(input || '')}</pre>`
+      return det
+    }
+    if (b.type === 'tool_result') {
+      const det = document.createElement('details'); det.className = 'tool' + (b.isError ? ' err' : ''); det.dataset.kind = 'result'
+      const text = b.text || ''
+      // 长结果：summary 中显示首行预览
+      const firstLine = text.split('\n').find(l => l.trim()) || ''
+      const preview = firstLine.length > 80 ? firstLine.slice(0, 80) + '…' : firstLine
+      const hint = text.length > 200 ? ` · ${text.length}字符` : ''
+      det.innerHTML = `<summary>${b.isError ? '⚠️' : '↳'} 工具输出${b.isError ? '（错误）' : ''}${preview ? ' · ' + escapeHtml(preview) : ''}<span style="color:#5a6270">${hint}</span></summary><pre>${escapeHtml(text)}</pre>`
+      return det
+    }
+    if (b.type === 'image') {
+      const d = document.createElement('div'); d.className = 'block'; d.textContent = '🖼️ [图片]'; return d
+    }
+    const d = document.createElement('div'); d.className = 'block'; d.textContent = b.text || '[未知内容块]'; return d
+  }
+
+  function scrollBottom() { const tl = $('timeline'); tl.scrollTop = tl.scrollHeight }
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+  }
+
+  // ── 控件 ─────────────────────────────────────────────────
+  $('liveBtn').onclick = () => {
+    liveFollow = !liveFollow
+    $('liveBtn').classList.toggle('active', liveFollow)
+  }
+  $('refreshBtn').onclick = () => send({ type: 'refresh' })
+  let searchTimer
+  $('searchInput').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(renderSessionList, 120) }
+
+  // ── 双模型评审 ───────────────────────────────────────────
+  let reviewActive = false
+  let reviewPaused = false
+  const streamEls = {} // `${role}-${round}` -> 内容 DOM 节点
+
+  const ROLE_LABEL = { executor: '主模型 · 执行方', reviewer: '评审模型', conclusion: '✅ 最终结论', moderator: '主持人' }
+
+  function openReviewModal() {
+    if (!activeSessionId) return
+    $('reviewQuery').value = ''
+    $('reviewModal').classList.add('open')
+    setTimeout(() => $('reviewQuery').focus(), 50)
+  }
+  function closeReviewModal() { $('reviewModal').classList.remove('open') }
+
+  function confirmReview() {
+    if (!activeSessionId) return
+    const query = $('reviewQuery').value.trim()
+    closeReviewModal()
+    // 清空面板并打开
+    $('reviewBody').innerHTML = ''
+    for (const k in streamEls) delete streamEls[k]
+    $('reviewPanel').classList.add('open')
+    setReviewStatusText('running')
+    reviewActive = true
+    reviewPaused = false
+    $('pauseBtn').textContent = '暂停'
+    send({ type: 'start_review', sourceSessionId: activeSessionId, query })
+  }
+
+  function setReviewStatusText(status) {
+    const map = { running: '进行中', paused: '已暂停', finished: '已完成', stopped: '已停止', error: '出错' }
+    const el = $('reviewStatusText')
+    el.textContent = map[status] || status
+    el.className = 'st ' + status
+  }
+
+  function onReviewStarted(review) {
+    $('reviewModels').textContent = `执行 ${review.executorModel} ↔ 评审 ${review.reviewerModel} · 取 ${review.contextRounds} 轮上下文`
+  }
+
+  function reviewMsgShell(role, round) {
+    const wrap = document.createElement('div')
+    wrap.className = 'rmsg ' + role
+    const label = ROLE_LABEL[role] || role
+    const roundTag = round > 0 ? ` · 第${round}轮` : ''
+    wrap.innerHTML = `<div class="rwho"><span class="tag">${label}</span><span class="rmodel">${roundTag}</span></div>`
+    const bubble = document.createElement('div')
+    bubble.className = 'rbubble'
+    wrap.appendChild(bubble)
+    $('reviewBody').appendChild(wrap)
+    return bubble
+  }
+
+  function onReviewToken(role, round, token) {
+    const key = `${role}-${round}`
+    let el = streamEls[key]
+    if (!el) { el = reviewMsgShell(role, round); streamEls[key] = el }
+    el.textContent += token
+    $('reviewBody').scrollTop = $('reviewBody').scrollHeight
+  }
+
+  function onReviewMessage(m) {
+    const key = `${m.role}-${m.round}`
+    let el = streamEls[key]
+    if (!el) el = reviewMsgShell(m.role, m.round)
+    el.textContent = m.content
+    delete streamEls[key]
+    $('reviewBody').scrollTop = $('reviewBody').scrollHeight
+  }
+
+  function onReviewStatus(status) {
+    if (status === 'paused' || status === 'running') {
+      if (status === 'paused' || status === 'running') reviewPaused = (status === 'paused')
+      $('pauseBtn').textContent = reviewPaused ? '继续' : '暂停'
+    }
+    if (['finished', 'stopped', 'error'].includes(status)) reviewActive = false
+    setReviewStatusText(status)
+  }
+
+  function onReviewError(msg) {
+    reviewActive = false
+    setReviewStatusText('error')
+    const note = document.createElement('div')
+    note.className = 'rmsg'
+    note.innerHTML = `<div class="rbubble" style="border-color:#5a2d2d;color:#e09a9a">⚠️ ${escapeHtml(msg)}</div>`
+    $('reviewBody').appendChild(note)
+  }
+
+  $('reviewClose').onclick = () => { $('reviewPanel').classList.remove('open'); if (reviewActive) send({ type: 'review_stop' }) }
+  $('reviewCancel').onclick = closeReviewModal
+  $('reviewConfirm').onclick = confirmReview
+  $('reviewModal').onclick = (e) => { if (e.target === $('reviewModal')) closeReviewModal() }
+  $('pauseBtn').onclick = () => {
+    if (!reviewActive) return
+    if (reviewPaused) { send({ type: 'review_resume' }) } else { send({ type: 'review_pause' }) }
+  }
+  $('stopBtn').onclick = () => { if (reviewActive) send({ type: 'review_stop' }) }
+  $('injectBtn').onclick = () => {
+    const v = $('injectInput').value.trim()
+    if (v && reviewActive) { send({ type: 'review_inject', content: v }); $('injectInput').value = '' }
+  }
+  $('injectInput').onkeydown = (e) => { if (e.key === 'Enter') $('injectBtn').onclick() }
+
+  connect()
+</script>
+</body>
+</html>
