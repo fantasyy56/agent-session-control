@@ -12,6 +12,8 @@ import { ClaudeMessage, MonitorClientEvent } from './claude/types'
 import { ReviewOrchestrator } from './review/orchestrator'
 import { buildContextTranscript } from './review/context'
 import { ReviewClientEvent, ReviewServerEvent, ReviewSession } from './review/types'
+import { ExportService } from './export/service'
+import { ExportFormat, MarkdownVariant } from './export/types'
 
 const PORT = parseInt(process.env.PORT || '3000', 10)
 const SESSION_ID_RE = /^[a-zA-Z0-9_-]+$/
@@ -67,6 +69,56 @@ app.get('/api/sessions/:id', (req, res) => {
     return
   }
   res.json(session)
+})
+
+// ── 导出 API ─────────────────────────────────────────────────
+const exportService = new ExportService()
+
+const ALLOWED_FORMATS: ExportFormat[] = ['json', 'markdown', 'html']
+const ALLOWED_VARIANTS: MarkdownVariant[] = ['concise', 'detailed']
+
+app.get('/api/sessions/:id/export', async (req, res) => {
+  const id = req.params.id
+  if (!SESSION_ID_RE.test(id)) {
+    res.status(400).json({ error: 'Invalid session id' })
+    return
+  }
+
+  const format = (req.query.format as string) || 'json'
+  const variant = (req.query.variant as string) || 'detailed'
+
+  if (!ALLOWED_FORMATS.includes(format as ExportFormat)) {
+    res.status(400).json({ error: `Invalid format. Allowed: ${ALLOWED_FORMATS.join(', ')}` })
+    return
+  }
+  if (!ALLOWED_VARIANTS.includes(variant as MarkdownVariant)) {
+    res.status(400).json({ error: `Invalid variant. Allowed: ${ALLOWED_VARIANTS.join(', ')}` })
+    return
+  }
+
+  const session = store.getSession(id)
+  if (!session) {
+    res.status(404).json({ error: 'Session not found' })
+    return
+  }
+
+  try {
+    const result = await exportService.export(session, {
+      format: format as ExportFormat,
+      sessionId: id,
+      variant: variant as MarkdownVariant,
+      includeThinking: true,
+      includeMetadata: true,
+    })
+
+    res.setHeader('Content-Type', result.mimeType)
+    res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`)
+    res.setHeader('Content-Length', result.size)
+    res.send(result.content)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Export failed'
+    res.status(500).json({ error: message })
+  }
 })
 
 // ── WebSocket：实时推送 ──────────────────────────────────────

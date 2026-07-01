@@ -212,6 +212,17 @@
   /* 简洁模式：空 assistant 气泡（只有工具）压缩 */
   .msg.tools-only .bubble { padding: 4px 8px; background: transparent; border: none; }
 
+  /* 单条消息导出按钮 */
+  .msg { position: relative; }
+  .msg-export-btn {
+    display: none; position: absolute; top: 0; right: 0;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+    border-radius: 5px; padding: 2px 6px; font-size: 11px; cursor: pointer; line-height: 1.4;
+    opacity: 0.75;
+  }
+  .msg-export-btn:hover { border-color: var(--accent-2); color: var(--accent-2); opacity: 1; }
+  .msg:hover .msg-export-btn { display: inline-block; }
+
   .round-sep { text-align: center; color: var(--muted); font-size: 11px; margin: 18px 0; }
   .new-flash { animation: flash 1s ease; }
   @keyframes flash { from { background: #2a3a2c; } to { background: transparent; } }
@@ -247,6 +258,28 @@
     padding: 6px 12px; border-radius: 7px; cursor: pointer; font-size: 13px;
   }
   .review-trigger:hover { border-color: #8a6ab0; }
+
+  /* 导出按钮组 */
+  .export-group { position: relative; display: inline-block; margin-top: 10px; margin-left: 8px; }
+  .export-btn {
+    background: #1a2a1f; border: 1px solid #2d5a35; color: #7fd9b9;
+    padding: 6px 12px; border-radius: 7px; cursor: pointer; font-size: 13px;
+  }
+  .export-btn:hover { border-color: var(--green); }
+  .export-menu {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; min-width: 200px; box-shadow: 0 6px 24px rgba(0,0,0,.4);
+  }
+  .export-menu.open { display: block; }
+  .export-menu .em-item {
+    padding: 9px 14px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 10px;
+  }
+  .export-menu .em-item:hover { background: var(--panel); }
+  .export-menu .em-item .em-icon { width: 20px; text-align: center; }
+  .export-menu .em-item .em-label { flex: 1; }
+  .export-menu .em-item .em-desc { color: var(--muted); font-size: 11px; }
+  .export-menu .em-sep { border-top: 1px solid var(--border); }
 
   /* 评审讨论面板（右侧第三列） */
   .review-panel {
@@ -606,13 +639,156 @@
         <span>🕑 ${fmtTime(meta.lastActiveAt)}</span>
         <span style="color:#5a6270">id: ${escapeHtml(meta.sessionId.slice(0,8))}</span>
       </div>
-      <button class="review-trigger" id="reviewTriggerBtn">⚖ 发起双模型评审</button>`
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="review-trigger" id="reviewTriggerBtn">⚖ 发起双模型评审</button>
+        <div class="export-group" id="exportGroup">
+          <button class="export-btn" id="exportBtn">⬇ 导出</button>
+          <div class="export-menu" id="exportMenu">
+            <div class="em-item" data-format="json">
+              <span class="em-icon">{ }</span>
+              <span class="em-label">JSON</span>
+              <span class="em-desc">完整数据，可再导入</span>
+            </div>
+            <div class="em-sep"></div>
+            <div class="em-item" data-format="markdown-detailed">
+              <span class="em-icon">📝</span>
+              <span class="em-label">Markdown（详细版）</span>
+              <span class="em-desc">含 thinking、工具调用详情</span>
+            </div>
+            <div class="em-item" data-format="markdown-concise">
+              <span class="em-icon">📋</span>
+              <span class="em-label">Markdown（简洁版）</span>
+              <span class="em-desc">纯文本，适合分享</span>
+            </div>
+          </div>
+        </div>
+      </div>`
     $('reviewTriggerBtn').onclick = openReviewModal
+    // 导出按钮
+    $('exportBtn').onclick = (e) => {
+      e.stopPropagation()
+      $('exportMenu').classList.toggle('open')
+    }
+    $('exportMenu').querySelectorAll('.em-item').forEach(el => {
+      el.onclick = () => {
+        const fmt = el.dataset.format
+        $('exportMenu').classList.remove('open')
+        triggerExport(meta.sessionId, fmt)
+      }
+    })
     $('conciseBtn').onclick = () => {
       const cur = sessionConciseMode[meta.sessionId] !== false
       sessionConciseMode[meta.sessionId] = !cur
       rerenderTimeline()
     }
+  }
+
+  // ── 导出功能 ─────────────────────────────────────────────
+  function triggerExport(sessionId, fmt) {
+    let format = 'json'
+    let variant = 'detailed'
+
+    if (fmt === 'json') {
+      format = 'json'
+    } else if (fmt === 'markdown-detailed') {
+      format = 'markdown'
+      variant = 'detailed'
+    } else if (fmt === 'markdown-concise') {
+      format = 'markdown'
+      variant = 'concise'
+    } else {
+      return
+    }
+
+    const url = `/api/sessions/${encodeURIComponent(sessionId)}/export?format=${format}&variant=${variant}`
+    // 利用 <a download> 触发浏览器下载
+    const a = document.createElement('a')
+    a.href = url
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
+  // 点击页面任意处关闭导出菜单
+  document.addEventListener('click', (e) => {
+    const menu = document.getElementById('exportMenu')
+    const btn = document.getElementById('exportBtn')
+    if (menu && btn && !btn.contains(e.target) && !menu.contains(e.target)) {
+      menu.classList.remove('open')
+    }
+  })
+
+  // ── 单条消息 Markdown 导出（纯前端，不需要后端） ─────────
+  function exportSingleMessage(m) {
+    const lines = []
+    const role = m.role === 'assistant' ? 'Assistant' : (m.role === 'system' ? 'System' : 'User')
+    const model = m.model ? ` *(${m.model})*` : ''
+    const ts = m.timestamp ? ` · ${new Date(m.timestamp).toLocaleString('zh-CN', {hour12:false})}` : ''
+    const tokens = m.usage ? ` · ↑${m.usage.input} ↓${m.usage.output} tokens` : ''
+
+    lines.push(`## ${role}${model}`)
+    lines.push(`*${ts.slice(3)}${tokens}*`)
+    lines.push('')
+
+    for (const b of m.blocks) {
+      switch (b.type) {
+        case 'text': {
+          if ((b.text || '').trim()) { lines.push(b.text.trim()); lines.push('') }
+          break
+        }
+        case 'thinking': {
+          if ((b.text || '').trim()) {
+            lines.push('<details>')
+            lines.push('<summary>💭 Thinking</summary>')
+            lines.push('')
+            lines.push(b.text.trim())
+            lines.push('')
+            lines.push('</details>')
+            lines.push('')
+          }
+          break
+        }
+        case 'tool_use': {
+          lines.push(`### 🔧 \`${b.toolName || 'tool'}\``)
+          lines.push('')
+          if (b.toolInput != null) {
+            const inp = typeof b.toolInput === 'string' ? b.toolInput : JSON.stringify(b.toolInput, null, 2)
+            if (inp.trim()) { lines.push('```'); lines.push(inp); lines.push('```'); lines.push('') }
+          }
+          break
+        }
+        case 'tool_result': {
+          const icon = b.isError ? '❌' : '✅'
+          lines.push(`### ${icon} Result`)
+          lines.push('')
+          if ((b.text || '').trim()) {
+            const out = b.text.length > 3000 ? b.text.slice(0, 3000) + `\n\n... (${b.text.length - 3000} chars omitted)` : b.text
+            lines.push('```'); lines.push(out.trim()); lines.push('```'); lines.push('')
+          }
+          break
+        }
+        case 'image':
+          lines.push('> 📷 *[image]*'); lines.push(''); break
+      }
+    }
+
+    lines.push('')
+    lines.push(`---`)
+    lines.push(`*Exported from [agent-session-control](https://github.com/your-username/agent-session-control)*`)
+
+    const md = lines.join('\n')
+    const blob = new Blob([md], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const ts2 = new Date().toISOString().slice(0,16).replace(/[:T]/g, '-')
+    const msgId = (m.uuid || '').slice(0, 8) || ts2
+    a.download = `msg-${msgId}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   // 记录当前会话原始消息，切换模式时重渲染用
@@ -677,6 +853,14 @@
     const tokens = m.usage ? `<span class="tokens">↑${m.usage.input} ↓${m.usage.output}</span>` : ''
     const model = m.model ? `<span class="model">${escapeHtml(m.model)}</span>` : ''
     wrap.innerHTML = `<div class="who"><span class="role-tag">${roleLabel}</span>${model}${tokens}<span style="color:#5a6270">${fmtTime(m.timestamp)}</span></div>`
+
+    // 单条消息导出按钮
+    const exportBtn = document.createElement('button')
+    exportBtn.className = 'msg-export-btn'
+    exportBtn.textContent = '↓ md'
+    exportBtn.title = '导出此消息为 Markdown'
+    exportBtn.onclick = (e) => { e.stopPropagation(); exportSingleMessage(m) }
+    wrap.appendChild(exportBtn)
     const bubble = document.createElement('div')
     bubble.className = 'bubble'
 

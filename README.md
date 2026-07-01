@@ -57,6 +57,13 @@ The **Claude CLI agent** writes sessions to local files, but there's no unified 
 
 - **Source badges** — sessions are tagged with their origin (`CLI` / `IDE`) and filterable via tab switcher.
 
+### Session Export
+
+- **Full-session export** — export any session as **JSON** (lossless, all metadata preserved) or **Markdown** (concise / detailed variant) from the session header.
+- **Single-message export** — hover over any message bubble to reveal a `↓ md` button; click to download that message as a standalone Markdown file. Works entirely in the browser — no round-trip to the server.
+- JSON export includes per-session statistics: total tokens, tool call counts by name, message counts by role.
+- Markdown detailed variant wraps `thinking` blocks in `<details>` collapsibles and expands full tool input/output; concise variant collapses them.
+
 ### Cross-Model Peer Review
 
 The review subsystem implements an **asymmetric debate protocol**:
@@ -134,6 +141,7 @@ PORT=3002
 - [x] **Phase 3** — CodeBuddy IDE source integration, unified aggregation layer
 - [x] **Phase 3.1** — Concise/full per-session view, tool call collapsing
 - [x] **Phase 3.2** — System injection parser, semantic tag visualization
+- [x] **Phase 3.3** — Session export (JSON / Markdown full-session + single-message hover export)
 - [ ] **Phase 4** — Reverse operation: resume/inject into live Claude CLI sessions
 - [ ] Session naming persistence
 - [ ] Cursor / Windsurf data source adapters
