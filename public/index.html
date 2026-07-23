@@ -39,6 +39,25 @@
     background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
   }
   .badge.live { color: var(--green); border-color: #2d5a35; }
+  /* 可点击展开的路径徽标 */
+  .badge.path-badge { cursor: pointer; position: relative; max-width: 340px; }
+  .badge.path-badge:hover { border-color: var(--accent-2); }
+  .badge.path-badge .badge-text {
+    display: inline-block; max-width: 316px; vertical-align: bottom;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .badge.path-badge .badge-text::after { content: ' ⌄'; opacity: .6; }
+  .badge.path-badge.open .badge-text::after { content: ' ⌃'; }
+  .path-popover {
+    position: absolute; top: calc(100% + 6px); right: 0; text-align: left; cursor: text;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; color: var(--text);
+    max-width: 560px; min-width: 220px; word-break: break-all; white-space: normal;
+    z-index: 200; box-shadow: 0 6px 22px rgba(0,0,0,.45);
+  }
+  .path-popover .path-line { line-height: 1.55; }
+  .path-popover .path-line + .path-line { margin-top: 5px; }
+  .path-popover .path-src { color: var(--accent-2); margin-right: 4px; }
   .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); margin-right: 5px; vertical-align: middle; }
   .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
   .dot.off { background: #d9534f; }
@@ -251,6 +270,7 @@
   }
   .src-chip.claude { background: #2c1f30; color: #d8a8e0; }
   .src-chip.codebuddy { background: #1f2c30; color: #a8d0e0; }
+  .src-chip.workbuddy { background: #2c2a1f; color: #e0d0a8; }
 
   /* 发起评审按钮 */
   .review-trigger {
@@ -419,8 +439,9 @@
   const isConcise = () => activeSessionId ? (sessionConciseMode[activeSessionId] !== false) : true
   let collapsed = {} // projectKey -> bool
   let sources = []          // [{sourceType, baseDir, available, ...}]
-  let activeSource = 'all'  // 'all' | 'claude' | 'codebuddy'
-  const SRC_LABEL = { claude: 'Claude CLI', codebuddy: 'CodeBuddy IDE' }
+  let activeSource = 'all'  // 'all' | 'claude' | 'codebuddy' | 'workbuddy'
+  const SRC_LABEL = { claude: 'Claude CLI', codebuddy: 'CodeBuddy IDE', workbuddy: 'WorkBuddy CLI' }
+  const SRC_CHIP_SHORT = { claude: 'CLI', codebuddy: 'IDE', workbuddy: 'WB' }
 
   // ── WebSocket ───────────────────────────────────────────
   function connect() {
@@ -502,7 +523,7 @@
   }
 
   function countSessionsBySource() {
-    const cnt = { claude: 0, codebuddy: 0, all: 0 }
+    const cnt = { claude: 0, codebuddy: 0, workbuddy: 0, all: 0 }
     for (const p of projects) {
       const n = p.sessions.length
       cnt[p.sourceType] = (cnt[p.sourceType] || 0) + n
@@ -534,17 +555,51 @@
     }
   }
 
+  let badgePathExpanded = false
   function updateSourceBadge() {
+    // 全局：点击徽标以外的区域收起浮层（仅注册一次）
+    if (!window.__badgeDocClickBound) {
+      window.__badgeDocClickBound = true
+      document.addEventListener('click', () => {
+        if (badgePathExpanded) { badgePathExpanded = false; updateSourceBadge() }
+      })
+    }
     const badge = $('sourceBadge')
+    // 收集要展示的路径行：[{src, path}]
+    let entries = []
+    let label = ''
     if (activeSource === 'all') {
-      const lines = sources.filter(s => s.available).map(s => `${SRC_LABEL[s.sourceType] || s.sourceType}: ${s.baseDir}`)
-      badge.textContent = `${sources.filter(s => s.available).length} 个数据源`
-      badge.title = lines.join('\n')
+      const avail = sources.filter(s => s.available)
+      entries = avail.map(s => ({ src: SRC_LABEL[s.sourceType] || s.sourceType, path: s.baseDir }))
+      label = `${avail.length} 个数据源`
     } else {
       const s = sources.find(x => x.sourceType === activeSource)
       const base = s ? s.baseDir : ''
-      badge.textContent = base ? (base.length > 60 ? '…' + base.slice(-58) : base) : '不可用'
-      badge.title = base
+      if (base) { entries = [{ src: '', path: base }]; label = base }
+      else { label = '不可用' }
+    }
+    const hasPath = entries.length > 0
+    badge.classList.toggle('path-badge', hasPath)
+    badge.classList.toggle('open', hasPath && badgePathExpanded)
+    badge.title = hasPath ? '点击展开/收起完整路径' : ''
+    badge.innerHTML = ''
+    const txt = document.createElement('span')
+    txt.className = 'badge-text'
+    txt.textContent = label
+    badge.appendChild(txt)
+    if (hasPath) {
+      if (badgePathExpanded) {
+        const pop = document.createElement('div')
+        pop.className = 'path-popover'
+        pop.innerHTML = entries
+          .map(e => `<div class="path-line">${e.src ? `<span class="path-src">${escapeHtml(e.src)}:</span>` : ''}${escapeHtml(e.path)}</div>`)
+          .join('')
+        pop.onclick = (ev) => ev.stopPropagation()  // 允许在浮层内选中复制，不触发收起
+        badge.appendChild(pop)
+      }
+      badge.onclick = (ev) => { ev.stopPropagation(); badgePathExpanded = !badgePathExpanded; updateSourceBadge() }
+    } else {
+      badge.onclick = null
     }
   }
 
@@ -564,7 +619,7 @@
       const group = document.createElement('div')
       group.className = 'project-group'
       const short = p.cwd.split('/').slice(-2).join('/') || p.cwd
-      const srcChip = `<span class="src-chip ${p.sourceType}" title="${SRC_LABEL[p.sourceType] || p.sourceType}">${p.sourceType === 'claude' ? 'CLI' : 'IDE'}</span>`
+      const srcChip = `<span class="src-chip ${p.sourceType}" title="${SRC_LABEL[p.sourceType] || p.sourceType}">${SRC_CHIP_SHORT[p.sourceType] || p.sourceType}</span>`
       const head = document.createElement('div')
       head.className = 'project-header' + (isCollapsed ? ' collapsed' : '')
       head.innerHTML = `<span class="caret">▼</span>${srcChip}<span class="path" title="${escapeHtml(p.cwd)}">${escapeHtml(short)}</span><span class="count">${sessions.length}</span>`
@@ -626,7 +681,7 @@
       ? `<span class="custom-title-badge" title="手动命名">🏷</span>${escapeHtml(meta.customTitle)}`
       : escapeHtml(meta.title)
     const srcChip = meta.sourceType
-      ? `<span class="src-chip ${meta.sourceType}" title="${SRC_LABEL[meta.sourceType] || meta.sourceType}">${meta.sourceType === 'claude' ? 'Claude CLI' : 'CodeBuddy IDE'}</span>`
+      ? `<span class="src-chip ${meta.sourceType}" title="${SRC_LABEL[meta.sourceType] || meta.sourceType}">${SRC_LABEL[meta.sourceType] || meta.sourceType}</span>`
       : ''
     const concise = sessionConciseMode[meta.sessionId] !== false
     $('sessionBar').innerHTML = `<div class="t">${srcChip}${titleHtml}

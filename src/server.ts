@@ -280,7 +280,7 @@ wss.on('connection', (ws: WebSocket) => {
 server.listen(PORT, () => {
   console.log(`🔭 多源会话监视台运行于 http://localhost:${PORT}`)
   for (const s of store.sources) {
-    const tag = s.sourceType === 'claude' ? 'Claude CLI' : 'CodeBuddy IDE'
+    const tag = s.sourceType === 'claude' ? 'Claude CLI' : s.sourceType === 'codebuddy' ? 'CodeBuddy IDE' : 'WorkBuddy CLI'
     const status = s.available ? (s.usingSample ? '内置样例' : '已接入') : '未发现'
     console.log(`   [${tag}] ${status}  ${s.baseDir || '-'}`)
   }

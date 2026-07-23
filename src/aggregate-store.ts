@@ -1,26 +1,30 @@
-// AggregateStore：把多个 SessionSource（Claude / CodeBuddy）合并到一个统一对外接口。
+// AggregateStore：把多个 SessionSource（Claude / CodeBuddy / WorkBuddy）合并到一个统一对外接口。
 //
 // 设计：
 // - 对外 API 与 ClaudeStore 保持一致（getProjects/getSession/scan/startWatching/on/off）
 // - 每个会话的来源以 SessionMeta.sourceType 区分
-// - sessionId 可能在两个源里同名（虽然 UUID 实践上不太可能冲突），所以内部用 sourceType+sessionId 索引
+// - sessionId 可能在多个源里同名（虽然 UUID 实践上不太可能冲突），所以内部用 sourceType+sessionId 索引
 
 import { ClaudeStore, StoreEvent as ClaudeStoreEvent } from './claude/store'
 import { CodeBuddyStore, CodeBuddyStoreEvent } from './codebuddy/store'
+import { WorkBuddyStore, WorkBuddyStoreEvent } from './workbuddy/store'
 import { ClaudeMessage, ProjectGroup, SessionDetail, SessionMeta, SourceType } from './claude/types'
 
-export type AggStoreEvent = ClaudeStoreEvent | CodeBuddyStoreEvent
+export type AggStoreEvent = ClaudeStoreEvent | CodeBuddyStoreEvent | WorkBuddyStoreEvent
 
 export class AggregateStore {
   private claude: ClaudeStore
   private codebuddy: CodeBuddyStore
+  private workbuddy: WorkBuddyStore
   private listeners = new Set<(e: AggStoreEvent) => void>()
 
   constructor() {
     this.claude = new ClaudeStore()
     this.codebuddy = new CodeBuddyStore()
+    this.workbuddy = new WorkBuddyStore()
     this.claude.on((e) => this.fanout(e))
     this.codebuddy.on((e) => this.fanout(e))
+    this.workbuddy.on((e) => this.fanout(e))
   }
 
   // 兼容老接口：baseDir 拿主源（Claude）；前端从 /api/meta 取
@@ -35,6 +39,7 @@ export class AggregateStore {
     return [
       { sourceType: 'claude', baseDir: this.claude.baseDir, usingSample: this.claude.usingSample, available: !!this.claude.baseDir },
       { sourceType: 'codebuddy', baseDir: this.codebuddy.baseDir, usingSample: false, available: !!this.codebuddy.baseDir },
+      { sourceType: 'workbuddy', baseDir: this.workbuddy.baseDir, usingSample: false, available: !!this.workbuddy.baseDir },
     ]
   }
 
@@ -57,28 +62,31 @@ export class AggregateStore {
   scan(): void {
     this.claude.scan()
     this.codebuddy.scan()
+    this.workbuddy.scan()
   }
 
   startWatching(): void {
     this.claude.startWatching()
     this.codebuddy.startWatching()
+    this.workbuddy.startWatching()
   }
 
   async stopWatching(): Promise<void> {
     await this.claude.stopWatching()
     await this.codebuddy.stopWatching()
+    await this.workbuddy.stopWatching()
   }
 
-  // 合并两边的项目分组
+  // 合并各源的项目分组
   getProjects(): ProjectGroup[] {
-    return [...this.claude.getProjects(), ...this.codebuddy.getProjects()].sort(
+    return [...this.claude.getProjects(), ...this.codebuddy.getProjects(), ...this.workbuddy.getProjects()].sort(
       (a, b) => b.lastActiveAt - a.lastActiveAt
     )
   }
 
-  // 先查 Claude，再查 CodeBuddy
+  // 依次查 Claude / CodeBuddy / WorkBuddy
   getSession(sessionId: string): SessionDetail | null {
-    return this.claude.getSession(sessionId) || this.codebuddy.getSession(sessionId)
+    return this.claude.getSession(sessionId) || this.codebuddy.getSession(sessionId) || this.workbuddy.getSession(sessionId)
   }
 }
 
