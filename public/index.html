@@ -251,17 +251,38 @@
   /* 手动命名标记 */
   .custom-title-badge { margin-right: 4px; font-size: 11px; opacity: 0.8; }
 
-  /* 数据源 Tab 切换器（header 中） */
-  .source-tabs { display: inline-flex; gap: 4px; background: var(--panel-2); padding: 3px; border-radius: 9px; border: 1px solid var(--border); margin-left: 8px; }
-  .source-tabs .tab {
-    padding: 4px 11px; font-size: 12px; color: var(--muted); cursor: pointer; border-radius: 6px;
-    user-select: none; display: inline-flex; align-items: center; gap: 4px;
+  /* 数据源 Tab 切换器（最左侧竖栏） */
+  .source-rail {
+    width: 132px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0;
   }
-  .source-tabs .tab:hover { color: var(--text); }
-  .source-tabs .tab.active { background: var(--bg); color: var(--text); }
-  .source-tabs .tab.disabled { opacity: 0.35; cursor: not-allowed; }
-  .source-tabs .tab .cnt { font-size: 10px; color: var(--muted); }
-  .source-tabs .tab.active .cnt { color: var(--accent); }
+  .source-rail .rail-title {
+    padding: 12px 14px 8px; font-size: 11px; color: var(--muted);
+    letter-spacing: .5px; text-transform: uppercase; user-select: none;
+  }
+  .source-rail .rail-list { flex: 1; overflow-y: auto; padding: 4px 8px 10px; display: flex; flex-direction: column; gap: 3px; }
+  .source-rail .rail-item {
+    padding: 9px 10px; border-radius: 8px; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
+    border: 1px solid transparent;
+  }
+  .source-rail .rail-item:hover { background: var(--panel-2); color: var(--text); }
+  .source-rail .rail-item.active {
+    background: var(--panel-2); color: var(--text); border-color: var(--accent);
+  }
+  .source-rail .rail-item.disabled { opacity: 0.35; cursor: not-allowed; }
+  .source-rail .rail-item .ri-icon {
+    width: 22px; height: 22px; border-radius: 6px; display: inline-flex;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0;
+  }
+  .source-rail .rail-item.src-all .ri-icon   { background: #2a2f3a; color: var(--text); }
+  .source-rail .rail-item.src-claude .ri-icon    { background: #2c1f30; color: #d8a8e0; }
+  .source-rail .rail-item.src-codebuddy .ri-icon { background: #1f2c30; color: #a8d0e0; }
+  .source-rail .rail-item.src-workbuddy .ri-icon { background: #2c2a1f; color: #e0d0a8; }
+  .source-rail .rail-item.src-cursor .ri-icon    { background: #1f2230; color: #a8b4e0; }
+  .source-rail .rail-item .ri-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source-rail .rail-item .ri-cnt { font-size: 11px; color: var(--muted); background: var(--bg); padding: 1px 7px; border-radius: 999px; }
+  .source-rail .rail-item.active .ri-cnt { color: var(--accent); }
 
   /* 数据源徽标（session-item 上） */
   .src-chip {
@@ -271,6 +292,7 @@
   .src-chip.claude { background: #2c1f30; color: #d8a8e0; }
   .src-chip.codebuddy { background: #1f2c30; color: #a8d0e0; }
   .src-chip.workbuddy { background: #2c2a1f; color: #e0d0a8; }
+  .src-chip.cursor { background: #1f2230; color: #a8b4e0; }
 
   /* 发起评审按钮 */
   .review-trigger {
@@ -368,7 +390,6 @@
 <body>
   <header>
     <h1>🔭 多源会话监视台</h1>
-    <span class="source-tabs" id="sourceTabs"></span>
     <span class="spacer"></span>
     <span class="badge" id="sourceBadge" title="">—</span>
     <span class="badge"><span class="dot off" id="connDot"></span><span id="connText">未连接</span></span>
@@ -377,6 +398,10 @@
   </header>
 
   <div class="main">
+    <nav class="source-rail" aria-label="数据源切换">
+      <div class="rail-title">数据源</div>
+      <div class="rail-list" id="sourceTabs"></div>
+    </nav>
     <aside class="sidebar">
       <div class="search"><input id="searchInput" placeholder="搜索会话标题 / 项目路径…" /></div>
       <div class="session-list" id="sessionList"></div>
@@ -439,9 +464,9 @@
   const isConcise = () => activeSessionId ? (sessionConciseMode[activeSessionId] !== false) : true
   let collapsed = {} // projectKey -> bool
   let sources = []          // [{sourceType, baseDir, available, ...}]
-  let activeSource = 'all'  // 'all' | 'claude' | 'codebuddy' | 'workbuddy'
-  const SRC_LABEL = { claude: 'Claude CLI', codebuddy: 'CodeBuddy IDE', workbuddy: 'WorkBuddy CLI' }
-  const SRC_CHIP_SHORT = { claude: 'CLI', codebuddy: 'IDE', workbuddy: 'WB' }
+  let activeSource = 'all'  // 'all' | 'claude' | 'codebuddy' | 'workbuddy' | 'cursor'
+  const SRC_LABEL = { claude: 'Claude Code', codebuddy: 'CodeBuddy', workbuddy: 'WorkBuddy', cursor: 'Cursor' }
+  const SRC_CHIP_SHORT = { claude: 'CC', codebuddy: 'CB', workbuddy: 'WB', cursor: 'CUR' }
 
   // ── WebSocket ───────────────────────────────────────────
   function connect() {
@@ -536,18 +561,27 @@
     const cnt = countSessionsBySource()
     const tabs = $('sourceTabs')
     tabs.innerHTML = ''
-    // 始终显示「全部」 + 两个数据源（不可用的置灰）
+    // 始终显示「全部」 + 各数据源（不可用的置灰）
     const items = [
       { key: 'all', label: '全部', available: true, count: cnt.all },
       ...sources.map(s => ({ key: s.sourceType, label: SRC_LABEL[s.sourceType] || s.sourceType, available: s.available, count: cnt[s.sourceType] || 0 })),
     ]
     for (const it of items) {
-      const el = document.createElement('span')
-      const cls = ['tab']
+      const el = document.createElement('div')
+      const cls = ['rail-item', 'src-' + it.key]
       if (activeSource === it.key) cls.push('active')
       if (!it.available && it.key !== 'all') cls.push('disabled')
       el.className = cls.join(' ')
-      el.innerHTML = `${escapeHtml(it.label)} <span class="cnt">${it.count}</span>`
+      const iconTxt = it.key === 'all' ? '全' : (SRC_CHIP_SHORT[it.key] || it.key.slice(0, 2).toUpperCase())
+      const tip = it.available || it.key === 'all'
+        ? `${it.label}（${it.count}）`
+        : `${it.label}（不可用）`
+      el.title = tip
+      el.innerHTML = `
+        <span class="ri-icon">${escapeHtml(iconTxt)}</span>
+        <span class="ri-label">${escapeHtml(it.label)}</span>
+        <span class="ri-cnt">${it.count}</span>
+      `
       if (it.available || it.key === 'all') {
         el.onclick = () => { activeSource = it.key; renderSourceTabs(); updateSourceBadge(); renderSessionList() }
       }
