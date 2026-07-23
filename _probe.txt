@@ -1,0 +1,10 @@
+workspaceIdentifier={"id":"cf3a8f0c0140813a7b578a6c00ecbc81","uri":{"$mid":1,"fsPath":"/Users/fantinli/coding/kefu-agent","external":"file:///Users/fantinli/coding/kefu-agent","path":"/Users/fantinli/coding/kefu-agent","scheme":"file"}}
+context.keys=[composers,selectedCommits,selectedPullRequests,selectedImages,selectedDocuments,selectedVideos,folderSelections,fileSelections,selections,terminalSelections,selectedDocs,externalLinks,cursorRules,cursorCommands,gitPRDiffSelections,subagentSelections,browserSelections,extraContext,mentions]
+context sample={"composers":[],"selectedCommits":[],"selectedPullRequests":[],"selectedImages":[],"selectedDocuments":[],"selectedVideos":[],"folderSelections":[],"fileSelections":[],"selections":[],"terminalSelections":[],"selectedDocs":[],"externalLinks":[],"cursorRules":[],"cursorCommands":[],"gitPRDiffSelectio
+--- WSDIR cf3a8f0c0140813a7b578a6c00ecbc81 hasJson=true hasDb=true
+  workspace.json={
+  "folder": "file:///Users/fantinli/coding/kefu-agent"
+}
+  matchkeys=anysphere.cursor-retrieval | cursor/agentLayout.sidebarLocation | cursor/sandboxSupported
+--- WSDIR empty-window hasJson=false hasDb=true
+  matchkeys=anysphere.cursor-retrieval | cursor/agentLayout.auxiliaryBarVisible | cursor/agentLayout.editorVisible | cursor/agentLayout.panelVisible | cursor/agentLayout.sidebarLocation | cursor/agentLayout.sidebarVisible | cursor/editorLayout.statusBarVisible | cursor/sandboxSupported | cursorAuth/workspaceOpenedDate

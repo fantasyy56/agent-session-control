@@ -30,8 +30,8 @@ export interface ClaudeMessage {
   isSidechain?: boolean // 子 agent / sidechain 消息
 }
 
-// 数据源类型：区分会话来自 Claude Code CLI / CodeBuddy IDE / WorkBuddy CLI
-export type SourceType = 'claude' | 'codebuddy' | 'workbuddy'
+// 数据源类型：区分会话来自 Claude Code CLI / CodeBuddy IDE / WorkBuddy CLI / Cursor
+export type SourceType = 'claude' | 'codebuddy' | 'workbuddy' | 'cursor'
 
 // 会话元信息（列表展示用，不含完整消息体）
 export interface SessionMeta {
